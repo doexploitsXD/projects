@@ -1210,6 +1210,43 @@ local function createUI()
     createToggle(8, "Auto-Buy Tank", "Auto-upgrade tank if affordable (30s)", "autoBuyTank")
     createToggle(9, "Auto-Claim Index", "Auto-claim pet index rewards (30s)", "autoClaimIndex")
 
+        -- Discord Button (In Scroll Content)
+    local discordContainer = Instance.new("Frame")
+    discordContainer.Name = "DiscordContainer"
+    discordContainer.Size = UDim2.new(1, 0, 0, 45)
+    discordContainer.BackgroundColor3 = C.BG_CARD
+    discordContainer.LayoutOrder = 20 -- Ensure it's at the bottom
+    discordContainer.Parent = scroll
+    Instance.new("UICorner", discordContainer).CornerRadius = UDim.new(0, 10)
+    
+    local discordStroke = Instance.new("UIStroke")
+    discordStroke.Color = C.STROKE
+    discordStroke.Transparency = 0.8
+    discordStroke.Parent = discordContainer
+
+    local discordBtn = Instance.new("TextButton")
+    discordBtn.Name = "DiscordBtn"
+    discordBtn.Size = UDim2.new(1, -20, 1, -10)
+    discordBtn.Position = UDim2.new(0, 10, 0, 5)
+    discordBtn.BackgroundColor3 = Color3.fromRGB(88, 101, 242) -- Discord Blurple
+    discordBtn.Text = "Join Discord"
+    discordBtn.TextColor3 = C.TEXT_WHITE
+    discordBtn.Font = Enum.Font.GothamBold
+    discordBtn.TextScaled = true
+    discordBtn.Parent = discordContainer
+    Instance.new("UICorner", discordBtn).CornerRadius = UDim.new(0, 6)
+
+    discordBtn.MouseButton1Click:Connect(function()
+        if setclipboard then
+            setclipboard("https://discord.gg/AeGmuJRFYJ")
+            notify("Steal Underwater Eggs", "Discord invite copied to clipboard!")
+        end
+        
+        if openurl then
+            openurl("https://discord.gg/AeGmuJRFYJ")
+        end
+    end)
+
     local statusFrame = Instance.new("Frame")
     statusFrame.Size = UDim2.new(1, 0, 0, 35)
     statusFrame.BackgroundColor3 = C.BG_CARD
@@ -1271,31 +1308,6 @@ minBtn.MouseButton1Click:Connect(function()
     end
 end)
 end
-
-    -- Discord Button
-    local discordBtn = Instance.new("TextButton")
-    discordBtn.Name = "DiscordBtn"
-    discordBtn.Size = UDim2.new(0, 120, 0, 35)
-    discordBtn.Position = UDim2.new(1, -135, 0, 8)
-    discordBtn.BackgroundColor3 = Color3.fromRGB(88, 101, 242) -- Discord Blurple
-    discordBtn.Text = "Join Discord"
-    discordBtn.TextColor3 = C.TEXT_WHITE
-    discordBtn.Font = Enum.Font.GothamBold
-    discordBtn.TextScaled = true
-    discordBtn.Parent = titleBar
-    Instance.new("UICorner", discordBtn).CornerRadius = UDim.new(0, 6)
-
-    discordBtn.MouseButton1Click:Connect(function()
-        if setclipboard then
-            setclipboard("https://discord.gg/AeGmuJRFYJ")
-            notify("Steal Underwater Eggs", "Discord invite copied to clipboard!")
-        end
-        
-        -- Attempt to open in default browser (works in some executors)
-        if openurl then
-            openurl("https://discord.gg/AeGmuJRFYJ")
-        end
-    end)
 
 createUI()
 
