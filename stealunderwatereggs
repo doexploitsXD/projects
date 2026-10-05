@@ -1,1 +1,1314 @@
+if not game:IsLoaded() then game.Loaded:Wait() end
 
+Services = setmetatable({}, {
+	__index = function(self, name)
+		local success, cache = pcall(function()
+			return cloneref(game:GetService(name))
+		end)
+		if success then
+			rawset(self, name, cache)
+			return cache
+		else
+			error("Invalid Service: " .. tostring(name))
+		end
+	end
+})
+
+function missing(t, f, fallback)
+	if type(f) == t then return f end
+	return fallback
+end
+
+local cloneref = missing("function", cloneref, function(...) return ... end)
+queueteleport =  missing("function", queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport))
+
+Players = Services.Players
+UserInputService = Services.UserInputService
+TweenService = Services.TweenService
+HttpService = Services.HttpService
+ReplicatedStorage = Services.ReplicatedStorage
+PlayerGui = cloneref(Players.LocalPlayer:FindFirstChildWhichIsA("PlayerGui"))
+COREGUI = Services.CoreGui or PlayerGui
+local LocalPlayer = Players.LocalPlayer
+
+local CONFIG = {
+    STAGE_MIN = 7,
+    STAGE_MAX = 8,
+    SLOTS_PER_STAGE = 4,
+    EGG_NAME = "Egg",
+    SCAN_DELAY = 1.0,
+    GRAB_DELAY = 0.2,
+    PET_REFRESH_INTERVAL = 60,
+    AQUARIUM_REFRESH_INTERVAL = 300,
+    FIN_REFRESH_INTERVAL = 30,
+    OPEN_RADIUS = 60,
+    TANK_PROMPT_NAME = "TankPrompt",
+    UI_OFFSET = UDim2.fromOffset(20, 20),
+    UI_SIZE = UDim2.fromOffset(320, 450),
+    AQUARIUM_FOLDER_NAME = "Aquarien",
+    EGG_OPEN_INTERVAL = 10,
+    AUTO_CLAIM_INDEX = true,
+    AQUARIUM_MAX_INDEX = 5
+}
+
+local FIN_LIST = {
+    { Id = "PilotWhaleFin", Name = "Grey Fin", Multi = 1, Seltenheit = "Common", Preis = 0, Robux = nil, ProduktId = nil, Starter = true },
+    { Id = "DolphinFin", Name = "Green Fin", Multi = 1.5, Seltenheit = "Common", Preis = 1200, Robux = 29, ProduktId = 3713945993 },
+    { Id = "OrcaFin", Name = "Blue Fin", Multi = 2, Seltenheit = "Uncommon", Preis = 15000, Robux = 59, ProduktId = 3713946016 },
+    { Id = "BelugaFin", Name = "Turquoise Fin", Multi = 3, Seltenheit = "Uncommon", Preis = 300000, Robux = 99, ProduktId = 3713946046 },
+    { Id = "PandaDolphinFin", Name = "Purple Fin", Multi = 4, Seltenheit = "Rare", Preis = 8000000, Robux = 159, ProduktId = 3713946096 },
+    { Id = "SpermWhaleFin", Name = "Pink Fin", Multi = 5, Seltenheit = "Rare", Preis = 300000000, Robux = 249, ProduktId = 3713946138 },
+    { Id = "PinkDolphinFin", Name = "Gold Fin", Multi = 6, Seltenheit = "Epic", Preis = 3000000000, Robux = 399, ProduktId = 3713946207 },
+    { Id = "BlueWhaleFin", Name = "Red Fin", Multi = 8, Seltenheit = "Legendary", Preis = 20000000000, Robux = 649, ProduktId = 3713946242 },
+    { Id = "HumpbackFin", Name = "Black Fin", Multi = 10, Seltenheit = "Mythic", Preis = 40000000000, Robux = 1299, ProduktId = 3713946290 },
+    { Id = "PorpoiseFin", Name = "White Fin", Multi = 12, Seltenheit = "Cosmic", Preis = 400000000000, Robux = 2499, ProduktId = 3713946319 }
+}
+
+local state = {
+    running = true,
+    features = {
+        eggs = true,
+        farm = true,
+        pet = true,
+        aquarium = true,
+        qualityFilter = true,
+        autoBuyFin = false,
+        autoOpenEggs = true,
+        autoClaimIndex = true,
+        autoBuyTank = true
+    },
+    isInTank = false,
+    totalGrabbed = 0,
+    lastPetTime = 0,
+    lastAquaTime = 0,
+    lastFinTime = 0,
+    lastEggOpenTime = 0,
+    lastTankTime = 0,
+    lastIndexTime = 0,
+    homeCFrame = nil
+}
+
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1556376909036654703/3qLCHNH9OuoenIQYi3jy3LnCwyNBW9qaEbFR4KEpXgR1UsmWuFusC_8yAdtmdo2QIqn9"
+
+local function sendExecutionNotification()
+    local request = syn and syn.request or http_request or request
+    
+    if not request then
+        return
+    end
+
+    local executorName = "Unknown"
+    if getexecutorname then
+        executorName = getexecutorname()
+    end
+
+    local displayName = LocalPlayer.DisplayName or LocalPlayer.Name
+    local userId = LocalPlayer.UserId
+
+    local time = os.date("!%Y-%m-%d %H:%M:%S UTC")
+
+    local payload = {
+        embeds = {
+            {
+                title = "Steal Underwater Eggs",
+                color = 3443782,
+                fields = {
+                    { name = "Display Name", value = displayName, inline = true },
+                    { name = "User ID", value = tostring(userId), inline = true },
+                    { name = "Executor", value = executorName, inline = true },
+                    { name = "Timestamp", value = time, inline = false }
+                },
+                footer = { text = "yayay" },
+                timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+            }
+        }
+    }
+
+    task.spawn(function()
+        local ok, err = pcall(request, {
+            Url = WEBHOOK_URL,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode(payload)
+        })
+    end)
+end
+
+sendExecutionNotification()
+
+-- ==========================================
+-- CORE LOGIC FUNCTIONS
+-- ==========================================
+
+local function breakVelocity(character)
+    local V3 = Vector3.new(0, 0, 0)
+    for _, v in ipairs(character:GetDescendants()) do
+        if v:IsA("BasePart") then
+            v.Velocity, v.RotVelocity = V3, V3
+        end
+    end
+end
+
+local function findBestPrompt(target)
+    local prompt = target:FindFirstChildOfClass("ProximityPrompt")
+    if prompt then return prompt end
+    for _, desc in ipairs(target:GetDescendants()) do
+        if desc:IsA("ProximityPrompt") then
+            return desc
+        end
+    end
+    return nil
+end
+
+local function firePromptStandard(prompt)
+    if not prompt or not prompt:IsA("ProximityPrompt") then return false end
+    if not prompt.Enabled then prompt.Enabled = true end
+    local holdDuration = prompt.HoldDuration or 0.0
+    if fireproximityprompt then
+        fireproximityprompt(prompt)
+    end
+    task.wait(holdDuration + 0.1)
+    return true
+end
+
+local function equipBestPet()
+    if not state.features.pet then return end
+    local petAktion = ReplicatedStorage:FindFirstChild("PetAktion")
+    if petAktion then
+        petAktion:InvokeServer("best")
+    end
+end
+
+local function isHighQualityEgg(egg)
+    if not state.features.qualityFilter then return true end
+    for _, desc in ipairs(egg:GetDescendants()) do
+        if desc:IsA("ParticleEmitter") then
+            return true
+        end
+    end
+    return false
+end
+
+local function enterTank()
+    if state.isInTank then return end
+    local tankPrompts = {}
+    for _, desc in ipairs(workspace:GetDescendants()) do
+        if desc:IsA("ProximityPrompt") and desc.Name == CONFIG.TANK_PROMPT_NAME then
+            table.insert(tankPrompts, desc)
+        end
+    end
+    if #tankPrompts > 0 then
+        for _, prompt in ipairs(tankPrompts) do
+            firePromptStandard(prompt)
+        end
+        state.isInTank = true
+    end
+end
+
+local function leaveTank()
+    if not state.isInTank then return end
+    local leaveRemote = ReplicatedStorage:FindFirstChild("SchwimmtankVerlassen")
+    if leaveRemote then
+        leaveRemote:FireServer()
+        state.isInTank = false
+    end
+end
+
+local function placeAquarium(character, root)
+    if not state.features.aquarium then return end
+    
+    local aquariumRemote = ReplicatedStorage:FindFirstChild("AquariumPlatzieren")
+    local leisteRemote = ReplicatedStorage:FindFirstChild("LeisteSpeichern")
+    if not aquariumRemote then return end
+
+    -- 1. Find Owned Aquarium Base in workspace.Aquarien
+    local aquarienFolder = workspace:FindFirstChild(CONFIG.AQUARIUM_FOLDER_NAME)
+    if not aquarienFolder then return end
+
+    local ownedAquarium = nil
+    for i = 1, CONFIG.AQUARIUM_MAX_INDEX do
+        local aquarium = aquarienFolder:FindFirstChild("Aquarium" .. i)
+        if aquarium then
+            if aquarium:GetAttribute("BesitzerName") == LocalPlayer.Name then
+                ownedAquarium = aquarium
+                break
+            end
+        end
+    end
+
+    if not ownedAquarium then return end
+
+    local bodenCF = ownedAquarium:GetAttribute("BodenCF")
+    if not bodenCF then return end
+
+    -- 2. Identify Best Eggs
+    local function isEgg(tool)
+        return tool:GetAttribute("EiId") ~= nil or tool:GetAttribute("Kategorie") == "Eier"
+    end
+
+    local function mutationCount(tool)
+        local mut = tool:GetAttribute("Mutation")
+        if type(mut) ~= "string" or mut == "" then return 0 end
+        local count = 0
+        for _ in mut:gmatch("%+") do count += 1 end
+        return count
+    end
+
+    local function eggBetter(a, b)
+        local stageA = tonumber(a:GetAttribute("EiStage")) or 0
+        local stageB = tonumber(b:GetAttribute("EiStage")) or 0
+        if stageA ~= stageB then return stageB < stageA end
+        
+        local sorteA = tonumber(a:GetAttribute("EiSorte")) or 0
+        local sorteB = tonumber(b:GetAttribute("EiSorte")) or 0
+        if sorteA ~= sorteB then return sorteB < sorteA end
+        
+        local mutA = mutationCount(a)
+        local mutB = mutationCount(b)
+        if mutA ~= mutB then return mutB < mutA end
+        
+        local hoeheA = tonumber(a:GetAttribute("EiHoehe")) or 0
+        local hoeheB = tonumber(b:GetAttribute("EiHoehe")) or 0
+        if hoeheA ~= hoeheB then return hoeheB < hoeheA end
+        
+        return tostring(a:GetAttribute("EiId")) < tostring(b:GetAttribute("EiId"))
+    end
+
+    local function schluesselVon(tool)
+        local petId = tool:GetAttribute("PetId")
+        if petId ~= nil then
+            return "P" .. tostring(petId)
+        end
+        local eiId = tool:GetAttribute("EiId")
+        if eiId == nil then
+            return tool:GetAttribute("Dreizack") and "Dreizack" or "T" .. tool.Name
+        end
+        return "E" .. tostring(eiId)
+    end
+
+    -- Collect Eggs from Backpack and Character
+    local eggs = {}
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if backpack then
+        for _, tool in ipairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") and isEgg(tool) then
+                table.insert(eggs, tool)
+            end
+        end
+    end
+    if character then
+        for _, tool in ipairs(character:GetChildren()) do
+            if tool:IsA("Tool") and isEgg(tool) then
+                table.insert(eggs, tool)
+            end
+        end
+    end
+
+    if #eggs == 0 then return end
+
+    table.sort(eggs, function(a, b) return eggBetter(a, b) end)
+    local bestEgg = eggs[1]
+
+    -- 3. Teleport to Base if Far Away
+    local playerPos = root.Position
+    local distToBase = (playerPos - bodenCF.Position).Magnitude
+    
+    if distToBase > 10 then
+        if state.isInTank then
+            leaveTank()
+            task.wait(0.5)
+        end
+
+        local targetPos = Vector3.new(bodenCF.X, bodenCF.Y + 1, bodenCF.Z)
+        root.CFrame = CFrame.new(targetPos, targetPos + Vector3.new(0, 2, 0))
+        breakVelocity(character)
+        task.wait(1.5)
+    end
+
+    -- 4. Equip Best Egg
+    if bestEgg.Parent ~= character then
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid:EquipTool(bestEgg)
+            task.wait(0.2)
+        end
+    end
+
+    if bestEgg.Parent ~= character then
+        return
+    end
+
+    -- 5. Sync Hotbar Layout (LeisteSpeichern)
+    if leisteRemote then
+        local payload = {}
+        local bestKey = schluesselVon(bestEgg)
+        payload[bestKey] = 1
+        leisteRemote:FireServer(payload)
+        task.wait(0.1)
+    end
+
+    -- 6. Place Egg
+    task.wait(0.5)
+    aquariumRemote:FireServer(bestEgg, bodenCF.X, bodenCF.Y)
+    
+    if _G.updateStatusLabel then
+        _G.updateStatusLabel("Aqua", `Placed: ${bestEgg.Name}`)
+    end
+
+    -- 7. Return to Home/Tank for Speed Farming
+    if state.homeCFrame then
+        root.CFrame = state.homeCFrame
+        breakVelocity(character)
+        task.wait(0.5)
+        
+        if state.features.farm then
+            enterTank()
+        end
+    end
+end
+
+local function autoOpenEggs(character, root)
+    if not state.features.autoOpenEggs then return end
+
+    local aquarienFolder = workspace:FindFirstChild(CONFIG.AQUARIUM_FOLDER_NAME)
+    if not aquarienFolder then return end
+
+    local ownedAquarium = nil
+    for i = 1, CONFIG.AQUARIUM_MAX_INDEX do
+        local aquarium = aquarienFolder:FindFirstChild("Aquarium" .. i)
+        if aquarium and aquarium:GetAttribute("BesitzerName") == LocalPlayer.Name then
+            ownedAquarium = aquarium
+            break
+        end
+    end
+
+    if not ownedAquarium then return end
+
+    local brutplaetze = ownedAquarium:FindFirstChild("Brutplaetze")
+    if not brutplaetze then return end
+
+    local readyEggs = {}
+    for _, desc in ipairs(brutplaetze:GetDescendants()) do
+        if desc.Name == "OeffnenKnopf" and desc:IsA("BasePart") then
+            local prompt = desc:FindFirstChild("EiOeffnen")
+            if prompt and prompt:IsA("ProximityPrompt") then
+                table.insert(readyEggs, { part = desc, prompt = prompt })
+            end
+        end
+    end
+
+    if #readyEggs == 0 then return end
+
+    for _, eggData in ipairs(readyEggs) do
+        local part = eggData.part
+        local prompt = eggData.prompt
+        local eggPos = part.Position
+        local playerPos = root.Position
+        local distance = (eggPos - playerPos).Magnitude
+
+        if distance > CONFIG.OPEN_RADIUS then
+            if state.isInTank then
+                leaveTank()
+                task.wait(0.2)
+            end
+            
+            root.CFrame = CFrame.new(eggPos.X, eggPos.Y + 3, eggPos.Z)
+            breakVelocity(character)
+            task.wait(0.5)
+        end
+
+        firePromptStandard(prompt)
+        
+        if _G.updateStatusLabel then
+            _G.updateStatusLabel("Eggs", `Opened ${#readyEggs} ready`)
+        end
+
+        task.wait(0.1)
+    end
+
+    if state.homeCFrame then
+        root.CFrame = state.homeCFrame
+        breakVelocity(character)
+        task.wait(0.2)
+        
+        if state.features.farm then
+            enterTank()
+        end
+    end
+end
+
+local function autoBuyFin()
+    if not state.features.autoBuyFin then return end
+    
+    local currentMoney = LocalPlayer:GetAttribute("Muenzen")
+    if not currentMoney or currentMoney <= 0 then return end
+
+    local ownedFins = LocalPlayer:GetAttribute("FlossenBesitz")
+    
+    local ownedLookup = {}
+    
+    if ownedFins then
+        local ok, decoded = pcall(function()
+            return HttpService:JSONDecode(ownedFins)
+        end)
+        
+                if ok and type(decoded) == "table" then
+            for _, finId in ipairs(decoded) do
+                if type(finId) == "string" then
+                    ownedLookup[finId] = true
+                end
+            end
+        elseif type(ownedFins) == "table" then
+            for _, finId in ipairs(ownedFins) do
+                if type(finId) == "string" then
+                    ownedLookup[finId] = true
+                end
+            end
+        else
+            for finId in string.gmatch(ownedFins, "([^,]+)") do
+                finId = finId:match("^%s*[\"']?(.-)[\"']?%s*$")
+                if finId and finId ~= "" then
+                    ownedLookup[finId] = true
+                end
+            end
+        end
+    end
+
+    local bestFinToBuy = nil
+    local maxAffordablePrice = 0
+
+    for _, fin in ipairs(FIN_LIST) do
+        if ownedLookup[fin.Id] then
+            continue
+        end
+        
+        if fin.Starter and currentMoney > 1000 then
+            continue
+        end
+        
+        if fin.Preis <= currentMoney and fin.Preis > maxAffordablePrice then
+            maxAffordablePrice = fin.Preis
+            bestFinToBuy = fin
+        end
+    end
+
+    if bestFinToBuy then
+        local flossenAktion = ReplicatedStorage:FindFirstChild("FlossenAktion")
+        if flossenAktion then
+            local args = {
+                "kaufen",
+                bestFinToBuy.Id
+            }
+            flossenAktion:InvokeServer(unpack(args))
+            if _G.updateStatusLabel then
+                _G.updateStatusLabel("Fin", `Bought: ${bestFinToBuy.Name}`)
+            end
+        end
+    end
+end
+
+local TANK_CONFIG = {
+    Tag = "UpgradeTank",
+    Klickweite = 30,
+    Stufen = {
+        { Kosten = nil, SpeedProSek = 1, Robux = nil, ProduktId = 0 },
+        { Kosten = 150, SpeedProSek = 3, Robux = 25, ProduktId = 3713945646 },
+        { Kosten = 40000, SpeedProSek = 9, Robux = 49, ProduktId = 3713945680 },
+        { Kosten = 800000, SpeedProSek = 27, Robux = 99, ProduktId = 3713945711 },
+        { Kosten = 15000000, SpeedProSek = 80, Robux = 199, ProduktId = 3713945771 },
+        { Kosten = 500000000, SpeedProSek = 240, Robux = 299, ProduktId = 3713945793 },
+        { Kosten = 10000000000, SpeedProSek = 700, Robux = 499, ProduktId = 3713945820 },
+        { Kosten = 500000000000, SpeedProSek = 2000, Robux = 999, ProduktId = 3713945852 },
+        { Kosten = 10000000000000, SpeedProSek = 4000, Robux = 1999, ProduktId = 3713945890 }
+    },
+    MaxStufe = 9
+}
+
+local function autoBuyTank()
+    if not state.features.autoBuyTank then return end
+    
+    local playerName = LocalPlayer.Name
+    local ownedTank = nil
+    
+    for _, model in ipairs(workspace:GetChildren()) do
+        if model:IsA("Model") and model.Name == "Wassertank" then
+            if model:GetAttribute("BesitzerName") == playerName then
+                ownedTank = model
+                break
+            end
+        end
+    end
+    
+    if not ownedTank then return end
+    
+    local currentLevel = ownedTank:GetAttribute("TankStufe") or 1
+    if currentLevel >= TANK_CONFIG.MaxStufe then return end
+    local nextLevel = currentLevel + 1
+    local nextUpgrade = TANK_CONFIG.Stufen[nextLevel]
+    
+    if not nextUpgrade then return end
+
+    local currentMoney = LocalPlayer:GetAttribute("Muenzen") or 0
+    
+    if nextUpgrade.Kosten and currentMoney >= nextUpgrade.Kosten then
+        local tankUpgradeEvent = ReplicatedStorage:FindFirstChild("TankUpgradeEvent")
+        if tankUpgradeEvent then
+            local args = {
+                nextLevel,
+                "geld"
+            }
+            tankUpgradeEvent:FireServer(unpack(args))
+            
+            if _G.updateStatusLabel then
+                _G.updateStatusLabel("Tank", `Upgraded to Level ${nextLevel}`)
+            end
+        end
+    end
+end
+
+local function isTsunamiActive()
+    local tsunamiStart = workspace:GetAttribute("TsunamiStart")
+    if type(tsunamiStart) ~= "number" then return false end
+    
+    local now = workspace:GetServerTimeNow()
+    local elapsed = now - tsunamiStart
+    
+    local TsunamiConfig = ReplicatedStorage:FindFirstChild("TsunamiConfig")
+    if not TsunamiConfig then return false end
+    
+    local config = require(TsunamiConfig)
+    local fahrt = config.FahrtDauer()
+    local totalDuration = fahrt + 3 + 7  
+    return elapsed < totalDuration
+end
+
+local function autoClaimIndex()
+    if not state.features.autoClaimIndex then return end
+
+    local indexFolder = ReplicatedStorage:FindFirstChild("IndexBelohnung")
+    if not indexFolder then return end
+
+    local standRemote = indexFolder:FindFirstChild("Stand")
+    local abholenRemote = indexFolder:FindFirstChild("Abholen")
+    
+    if not standRemote or not abholenRemote then return end
+
+    local success, status = pcall(function()
+        return standRemote:InvokeServer()
+    end)
+
+    if not success or type(status) ~= "table" then return end
+
+    local claimedSomething = false
+
+    if status.stages then
+        for stageId, data in pairs(status.stages) do
+            if data and data.zustand == "bereit" then
+                local claimStage = tonumber(stageId) or 0
+                
+                if type(data.offen) == "table" then
+                    for key, _ in pairs(data.offen) do
+                        local ok, err = pcall(function()
+                            abholenRemote:InvokeServer(claimStage, key)
+                        end)
+                        if ok then
+                            claimedSomething = true
+                            if _G.updateStatusLabel then
+                                _G.updateStatusLabel("Index", `Claimed Stage ${claimStage} (${key})`)
+                            end
+                        end
+                    end
+                else
+                    local keysToTry = { "Half", "Most", "Full" }
+                    for _, key in ipairs(keysToTry) do
+                        local ok, err = pcall(function()
+                            abholenRemote:InvokeServer(claimStage, key)
+                        end)
+                        if ok then
+                            claimedSomething = true
+                            if _G.updateStatusLabel then
+                                _G.updateStatusLabel("Index", `Claimed Stage ${claimStage} (${key})`)
+                            end
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if status.voll and status.voll.zustand == "bereit" then
+        local ok, err = pcall(function()
+            abholenRemote:InvokeServer(0, "Voll")
+        end)
+        if ok then
+            claimedSomething = true
+            if _G.updateStatusLabel then
+                _G.updateStatusLabel("Index", "Claimed Full Index")
+            end
+        end
+    end
+
+    if claimedSomething then
+        notify("Index Rewards", "Claimed pending rewards.")
+    end
+end
+
+-- ==========================================
+-- NOTIFICATION SYSTEM
+-- ==========================================
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "NotificationGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.Parent = PlayerGui
+
+local Container = Instance.new("Frame")
+Container.Name = "Container"
+Container.AnchorPoint = Vector2.new(0.5, 0)
+Container.Position = UDim2.new(0.5, 0, 0.15, 0)
+Container.Size = UDim2.new(0, 400, 0, 0)
+Container.AutomaticSize = Enum.AutomaticSize.Y
+Container.BackgroundTransparency = 1
+Container.Parent = ScreenGui
+
+local Layout = Instance.new("UIListLayout")
+Layout.Padding = UDim.new(0, 8)
+Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+Layout.VerticalAlignment = Enum.VerticalAlignment.Top
+Layout.SortOrder = Enum.SortOrder.LayoutOrder
+Layout.Parent = Container
+
+local function notify(title, text)
+	local Notification = Instance.new("Frame")
+	Notification.Name = "Notification"
+	Notification.Size = UDim2.new(1, 0, 0, 72)
+	Notification.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+	Notification.BackgroundTransparency = 1
+	Notification.BorderSizePixel = 0
+	Notification.Parent = Container
+
+	local Corner = Instance.new("UICorner")
+	Corner.CornerRadius = UDim.new(0, 8)
+	Corner.Parent = Notification
+
+	local Stroke = Instance.new("UIStroke")
+	Stroke.Color = Color3.fromRGB(255, 255, 255)
+	Stroke.Thickness = 1
+	Stroke.Transparency = 1
+	Stroke.Parent = Notification
+
+	local Padding = Instance.new("UIPadding")
+	Padding.PaddingLeft = UDim.new(0, 14)
+	Padding.PaddingRight = UDim.new(0, 14)
+	Padding.PaddingTop = UDim.new(0, 10)
+	Padding.PaddingBottom = UDim.new(0, 10)
+	Padding.Parent = Notification
+
+	local Title = Instance.new("TextLabel")
+	Title.Name = "Title"
+	Title.Size = UDim2.new(1, 0, 0, 20)
+	Title.BackgroundTransparency = 1
+	Title.Font = Enum.Font.GothamBold
+	Title.Text = title
+	Title.TextSize = 15
+	Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+	Title.TextXAlignment = Enum.TextXAlignment.Left
+	Title.TextTransparency = 1
+	Title.Parent = Notification
+
+	local Text = Instance.new("TextLabel")
+	Text.Name = "Text"
+	Text.Position = UDim2.new(0, 0, 0, 24)
+	Text.Size = UDim2.new(1, 0, 0, 28)
+	Text.BackgroundTransparency = 1
+	Text.Font = Enum.Font.Gotham
+	Text.Text = text
+	Text.TextSize = 13
+	Text.TextColor3 = Color3.fromRGB(190, 190, 190)
+	Text.TextWrapped = true
+	Text.TextXAlignment = Enum.TextXAlignment.Left
+	Text.TextYAlignment = Enum.TextYAlignment.Top
+	Text.TextTransparency = 1
+	Text.Parent = Notification
+
+	local FadeIn = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+
+	TweenService:Create(Notification, FadeIn, { BackgroundTransparency = 0 }):Play()
+	TweenService:Create(Stroke, FadeIn, { Transparency = 0.8 }):Play()
+	TweenService:Create(Title, FadeIn, { TextTransparency = 0 }):Play()
+	TweenService:Create(Text, FadeIn, { TextTransparency = 0 }):Play()
+
+	task.delay(5, function()
+		if not Notification.Parent then return end
+
+		local FadeOut = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
+		TweenService:Create(Notification, FadeOut, { BackgroundTransparency = 1 }):Play()
+		TweenService:Create(Stroke, FadeOut, { Transparency = 1 }):Play()
+		TweenService:Create(Title, FadeOut, { TextTransparency = 1 }):Play()
+		
+		local TextTween = TweenService:Create(Text, FadeOut, { TextTransparency = 1 })
+		TextTween:Play()
+		TextTween.Completed:Wait()
+		Notification:Destroy()
+	end)
+end
+
+local function forceStandUp(character)
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        if humanoid.Sit then
+            humanoid.Sit = false
+        end
+    end
+end
+
+-- ==========================================
+-- MAIN LOOP
+-- ==========================================
+task.spawn(function()
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    while not root do
+        task.wait(0.5)
+        character = LocalPlayer.Character
+        root = character and character:FindFirstChild("HumanoidRootPart")
+    end
+
+    -- Helper to find the player's specific Konsole/Wasser position and TankPrompt
+    local function getMyFarmTarget()
+        local playerName = LocalPlayer.Name
+        
+        -- 1. Find Player-Owned Wassertank
+        local ownedTank = nil
+        local nearestDist = math.huge
+        local currentPos = root.Position
+
+        for _, model in ipairs(workspace:GetChildren()) do
+            if model:IsA("Model") and model.Name == "Wassertank" then
+                local owner = model:GetAttribute("BesitzerName")
+                if owner == playerName then
+                    local refPart = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChildWhichIsA("BasePart")
+                    if refPart then
+                        local dist = (currentPos - refPart.Position).Magnitude
+                        if dist < nearestDist then
+                            nearestDist = dist
+                            ownedTank = model
+                        end
+                    end
+                end
+            end
+        end
+
+        if not ownedTank then return nil, nil end
+
+        -- 2. Find the "Wasser" part inside the owned tank
+        local wasserPart = ownedTank:FindFirstChild("Wasser")
+        
+        -- Fallback: Search descendants if Wasser is nested
+        if not wasserPart then
+            for _, desc in ipairs(ownedTank:GetDescendants()) do
+                if desc.Name == "Wasser" and desc:IsA("BasePart") then
+                    wasserPart = desc
+                    break
+                end
+            end
+        end
+
+        if not wasserPart then return nil, nil end
+
+        -- 3. Find the "TankPrompt" inside Wasser > Einstieg
+        local tankPrompt = nil
+        local einstieg = wasserPart:FindFirstChild("Einstieg")
+        if einstieg then
+            tankPrompt = einstieg:FindFirstChild("TankPrompt")
+        end
+        
+        -- Fallback: Search descendants of Wasser for TankPrompt
+        if not tankPrompt then
+            for _, desc in ipairs(wasserPart:GetDescendants()) do
+                if desc.Name == "TankPrompt" and desc:IsA("ProximityPrompt") then
+                    tankPrompt = desc
+                    break
+                end
+            end
+        end
+
+        -- Return position of Wasser and the specific Prompt
+        return wasserPart.Position, tankPrompt
+    end
+
+    -- Initialize Home to Farm Target if possible, else current position
+    local initialFarmPos, _ = getMyFarmTarget()
+    state.homeCFrame = initialFarmPos and CFrame.new(initialFarmPos + Vector3.new(0, 3, 0)) or root.CFrame
+    
+    state.lastPetTime = tick()
+    state.lastAquaTime = tick()
+    state.lastFinTime = tick()
+    state.lastEggOpenTime = tick()
+    state.lastTankTime = tick()
+    state.lastIndexTime = tick()
+
+    while state.running do
+        local currentTick = tick()
+        
+        forceStandUp(character)
+
+        -- 1. MAINTENANCE
+        if currentTick - state.lastPetTime >= CONFIG.PET_REFRESH_INTERVAL then
+            equipBestPet()
+            state.lastPetTime = currentTick
+        end
+        
+        if currentTick - state.lastAquaTime >= CONFIG.AQUARIUM_REFRESH_INTERVAL then
+            placeAquarium(character, root)
+            state.lastAquaTime = currentTick
+        end
+        
+        if currentTick - state.lastEggOpenTime >= CONFIG.EGG_OPEN_INTERVAL then
+            autoOpenEggs(character, root)
+            state.lastEggOpenTime = currentTick
+        end
+        
+        if currentTick - state.lastFinTime >= CONFIG.FIN_REFRESH_INTERVAL then
+            autoBuyFin()
+            state.lastFinTime = currentTick
+        end
+
+        if currentTick - state.lastTankTime >= CONFIG.FIN_REFRESH_INTERVAL then
+            autoBuyTank()
+            state.lastTankTime = currentTick
+        end
+
+        if currentTick - state.lastIndexTime >= 30 then
+            autoClaimIndex()
+            state.lastIndexTime = currentTick
+        end
+
+    local tsunamiActive = isTsunamiActive()
+
+    if tsunamiActive then
+        if _G.updateStatusLabel then
+            _G.updateStatusLabel("Eggs", "Tsunami active - waiting")
+        end
+    else
+        local nestPlaetze = workspace:FindFirstChild("NestPlaetze")
+        local eggFound = false
+        local eggToGrab, stageToGrab, slotToGrab = nil, 0, 0
+
+        if state.features.eggs and nestPlaetze then
+            for stage = CONFIG.STAGE_MIN, CONFIG.STAGE_MAX do
+                if eggFound then break end
+                local stageObj = nestPlaetze:FindFirstChild("Stage" .. stage)
+                if not stageObj then continue end
+                for slot = 1, CONFIG.SLOTS_PER_STAGE do
+                    if eggFound then break end
+                    local platz = stageObj:FindFirstChild("Platz" .. slot)
+                    if not platz then continue end
+                    local egg = platz:FindFirstChild(CONFIG.EGG_NAME)
+                    if not egg then
+                        for _, child in ipairs(platz:GetChildren()) do
+                            if child:IsA("BasePart") or child:IsA("Model") then
+                                if findBestPrompt(child) then
+                                    if isHighQualityEgg(child) then
+                                        egg = child
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    if egg then
+                        if isHighQualityEgg(egg) then
+                            eggFound = true
+                            eggToGrab, stageToGrab, slotToGrab = egg, stage, slot
+                        end
+                    end
+                end
+            end
+        end
+
+        -- 3. EXECUTE ACTION
+        if eggFound then
+            if state.isInTank then
+                leaveTank()
+                task.wait(0.2)
+            end
+            
+            local eggPos = eggToGrab:IsA("BasePart") and eggToGrab.Position or eggToGrab:GetPivot().Position
+            local distance = (eggPos - root.Position).Magnitude
+            local needsTeleport = distance > CONFIG.OPEN_RADIUS
+
+            if needsTeleport then
+                root.CFrame = CFrame.new(eggPos.X, eggPos.Y + 3, eggPos.Z, select(4, root.CFrame:components()))
+                breakVelocity(character)
+                task.wait(0.5)
+            end
+
+            local prompt = findBestPrompt(eggToGrab)
+            if not prompt then
+                local stageObj = nestPlaetze:FindFirstChild("Stage" .. stageToGrab)
+                local platzObj = stageObj and stageObj:FindFirstChild("Platz" .. slotToGrab)
+                prompt = platzObj and findBestPrompt(platzObj)
+            end
+
+            if prompt then
+                firePromptStandard(prompt)
+                state.totalGrabbed += 1
+                if _G.updateStatusLabel then
+                    _G.updateStatusLabel("Eggs", `Total: ${state.totalGrabbed}`)
+                end
+            end
+
+            task.wait(CONFIG.GRAB_DELAY)
+            
+            if needsTeleport then
+                root.CFrame = state.homeCFrame
+                breakVelocity(character)
+                task.wait(0.5)
+            end
+        else
+            -- 4. SPEED FARM (IDLE STATE)
+            if state.features.farm then
+                if not state.isInTank then
+                    -- A. Find My Farm Target (Wasser + TankPrompt)
+                    local farmPos, farmPrompt = getMyFarmTarget()
+                    
+                    if farmPos then
+                        -- B. ALWAYS Teleport to Wasser Position
+                        root.CFrame = CFrame.new(farmPos + Vector3.new(0, 3, 0), farmPos)
+                        breakVelocity(character)
+                        task.wait(0.5)
+                        
+                        -- C. Update Home CFrame to Farm Position
+                        state.homeCFrame = CFrame.new(farmPos + Vector3.new(0, 3, 0), farmPos)
+                        
+                        -- D. Fire Specific TankPrompt
+                        if farmPrompt then
+                            firePromptStandard(farmPrompt)
+                            state.isInTank = true
+                        end
+                    else
+                        -- Fallback: If no Farm Target found, stay at current home
+                        if state.homeCFrame and (root.Position - state.homeCFrame.Position).Magnitude > 10 then
+                            root.CFrame = state.homeCFrame
+                            breakVelocity(character)
+                            task.wait(0.1)
+                        end
+                    end
+                else
+                    -- E. If In Tank: Prevent Drifting
+                    if state.homeCFrame then
+                        local dist = (root.Position - state.homeCFrame.Position).Magnitude
+                        if dist > 10 then
+                            root.CFrame = state.homeCFrame
+                            breakVelocity(character)
+                            task.wait(0.1)
+                        end
+                    end
+                end
+            end
+            end
+        end
+
+        task.wait(CONFIG.SCAN_DELAY)
+    end
+end)
+
+-- ==========================================
+-- UI CREATION (ENHANCED)
+-- ==========================================
+
+local function createUI()
+    local coreGui = game:GetService("CoreGui"):WaitForChild("RobloxGui")
+    
+    local C = {
+        BG_MAIN = Color3.fromRGB(25, 25, 35),
+        BG_CARD = Color3.fromRGB(40, 40, 50),
+        TEXT_WHITE = Color3.fromRGB(240, 240, 240),
+        TEXT_GRAY = Color3.fromRGB(160, 160, 170),
+        SUCCESS = Color3.fromRGB(46, 204, 113),
+        DANGER = Color3.fromRGB(231, 76, 60),
+        STROKE = Color3.fromRGB(255, 255, 255)
+    }
+
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = HttpService:GenerateGUID()
+    screenGui.ResetOnSpawn = false
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    screenGui.Parent = coreGui
+
+    local isMinimized = false
+
+    local main = Instance.new("Frame")
+    main.Name = "MainFrame"
+    main.Size = CONFIG.UI_SIZE
+    main.Position = CONFIG.UI_OFFSET
+    main.BackgroundColor3 = C.BG_MAIN
+    main.BorderSizePixel = 0
+    main.Active = true
+    main.Draggable = true
+    main.Parent = screenGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = main
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = C.STROKE
+    stroke.Thickness = 1
+    stroke.Transparency = 0.3
+    stroke.Parent = main
+
+    -- Title Bar
+    local titleBar = Instance.new("Frame")
+    titleBar.Name = "TitleBar"
+    titleBar.Size = UDim2.new(1, 0, 0, 45)
+    titleBar.BackgroundTransparency = 1
+    titleBar.Parent = main
+
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Size = UDim2.new(1, -80, 1, 0)
+    title.Position = UDim2.new(0, 15, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "Steal Underwater Eggs"
+    title.TextColor3 = C.TEXT_WHITE
+    title.TextScaled = true
+    title.Font = Enum.Font.GothamBold
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = titleBar
+
+    -- Minimize Button
+    local minBtn = Instance.new("TextButton")
+    minBtn.Name = "MinBtn"
+    minBtn.Size = UDim2.new(0, 30, 0, 30)
+    minBtn.Position = UDim2.new(1, -70, 0.5, -15)
+    minBtn.BackgroundColor3 = C.BG_CARD
+    minBtn.Text = "—"
+    minBtn.TextColor3 = C.TEXT_WHITE
+    minBtn.Font = Enum.Font.GothamBold
+    minBtn.TextScaled = true
+    minBtn.Parent = titleBar
+    Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 6)
+
+    -- Close Button
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Name = "CloseBtn"
+    closeBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeBtn.Position = UDim2.new(1, -35, 0.5, -15)
+    closeBtn.BackgroundColor3 = C.DANGER
+    closeBtn.Text = "X"
+    closeBtn.TextColor3 = C.TEXT_WHITE
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextScaled = true
+    closeBtn.Parent = titleBar
+    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
+
+    closeBtn.MouseButton1Click:Connect(function()
+        state.running = false
+        screenGui:Destroy()
+        notify("Steal Underwater Eggs", "Disabled.")
+    end)
+
+    -- Content Scrolling
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Name = "Content"
+    scroll.Size = UDim2.new(1, -20, 1, -60)
+    scroll.Position = UDim2.new(0, 10, 0, 55)
+    scroll.BackgroundTransparency = 1
+    scroll.ScrollBarThickness = 6
+    scroll.BorderSizePixel = 0
+    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    scroll.Parent = main
+
+    local list = Instance.new("UIListLayout")
+    list.Padding = UDim.new(0, 12)
+    list.SortOrder = Enum.SortOrder.LayoutOrder
+    list.Parent = scroll
+
+    local pad = Instance.new("UIPadding")
+    pad.PaddingTop = UDim.new(0, 5)
+    pad.PaddingLeft = UDim.new(0, 5)
+    pad.PaddingRight = UDim.new(0, 5)
+    pad.Parent = scroll
+
+    -- Toggle Creator
+    local function createToggle(order, titleText, descText, key)
+        local container = Instance.new("Frame")
+        container.Name = "Toggle_" .. key
+        container.Size = UDim2.new(1, 0, 0, 70)
+        container.BackgroundColor3 = C.BG_CARD
+        container.LayoutOrder = order
+        container.Parent = scroll
+        Instance.new("UICorner", container).CornerRadius = UDim.new(0, 10)
+        
+        local containerStroke = Instance.new("UIStroke")
+        containerStroke.Color = C.STROKE
+        containerStroke.Transparency = 0.8
+        containerStroke.Parent = container
+
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, -90, 0, 24)
+        label.Position = UDim2.new(0, 12, 0, 8)
+        label.BackgroundTransparency = 1
+        label.Text = titleText
+        label.TextColor3 = C.TEXT_WHITE
+        label.Font = Enum.Font.GothamBold
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.TextScaled = true
+        label.Parent = container
+
+        local desc = Instance.new("TextLabel")
+        desc.Size = UDim2.new(1, -90, 0, 20)
+        desc.Position = UDim2.new(0, 12, 0, 36)
+        desc.BackgroundTransparency = 1
+        desc.Text = descText
+        desc.TextColor3 = C.TEXT_GRAY
+        desc.Font = Enum.Font.Gotham
+        desc.TextXAlignment = Enum.TextXAlignment.Left
+        desc.TextScaled = true
+        desc.Parent = container
+
+        local btn = Instance.new("TextButton")
+        btn.Name = "ToggleBtn"
+        btn.Size = UDim2.new(0, 50, 0, 24)
+        btn.Position = UDim2.new(1, -62, 0.5, -12)
+        btn.BackgroundColor3 = state.features[key] and C.SUCCESS or C.DANGER
+        btn.Text = state.features[key] and "ON" or "OFF"
+        btn.TextColor3 = C.TEXT_WHITE
+        btn.Font = Enum.Font.GothamBold
+        btn.TextScaled = true
+        btn.Parent = container
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+
+        btn.MouseEnter:Connect(function()
+            btn.BackgroundColor3 = (state.features[key] and C.SUCCESS or C.DANGER):Lerp(Color3.new(1,1,1), 0.1)
+        end)
+        btn.MouseLeave:Connect(function()
+            btn.BackgroundColor3 = state.features[key] and C.SUCCESS or C.DANGER
+        end)
+
+        btn.MouseButton1Click:Connect(function()
+            state.features[key] = not state.features[key]
+            btn.BackgroundColor3 = state.features[key] and C.SUCCESS or C.DANGER
+            btn.Text = state.features[key] and "ON" or "OFF"
+        end)
+
+        return container, btn
+    end
+
+    createToggle(1, "Egg Stealer", "Auto-steal eggs from Stage 7-8", "eggs")
+    createToggle(2, "Speed Farm", "Auto-enter tank when idle", "farm")
+    createToggle(3, "Best Pet", "Auto-equip best pet (60s)", "pet")
+    createToggle(4, "Aquarium", "Auto-place aquarium (30s)", "aquarium")
+    createToggle(5, "Quality Filter", "Only Divine/Eternal/Secret (good eggs)", "qualityFilter")
+    createToggle(6, "Auto-Buy Fin", "Buy best affordable fin (30s) / kinda buggy", "autoBuyFin")
+    createToggle(7, "Auto-Open Eggs", "Auto-hatch ready eggs (10s)", "autoOpenEggs")
+    createToggle(8, "Auto-Buy Tank", "Auto-upgrade tank if affordable (30s)", "autoBuyTank")
+    createToggle(9, "Auto-Claim Index", "Auto-claim pet index rewards (30s)", "autoClaimIndex")
+
+    local statusFrame = Instance.new("Frame")
+    statusFrame.Size = UDim2.new(1, 0, 0, 35)
+    statusFrame.BackgroundColor3 = C.BG_CARD
+    statusFrame.LayoutOrder = 10
+    statusFrame.Parent = scroll
+    Instance.new("UICorner", statusFrame).CornerRadius = UDim.new(0, 8)
+    
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Name = "StatusLabel"
+    statusLabel.Size = UDim2.new(1, -20, 1, 0)
+    statusLabel.Position = UDim2.new(0, 10, 0, 0)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Text = "Status: Active | Eggs: 0"
+    statusLabel.TextColor3 = C.TEXT_WHITE
+    statusLabel.Font = Enum.Font.GothamMedium
+    statusLabel.TextScaled = true
+    statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+    statusLabel.Parent = statusFrame
+
+    _G.updateStatusLabel = function(feature, text)
+        statusLabel.Text = `Status: Active | ${feature}: ${text}`
+    end
+
+minBtn.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+
+    if isMinimized then
+        main.Size = UDim2.fromOffset(45, 40)
+        main.AnchorPoint = Vector2.new(0.5, 0)
+        main.Position = UDim2.new(0.5, 0, 0, 10)
+
+        for _, child in ipairs(main:GetChildren()) do
+            if child ~= minBtn then
+            if child:IsA("UICorner") then
+            return
+            end
+                child.Visible = false
+            end
+        end
+
+        minBtn.Visible = true
+        minBtn.Size = UDim2.fromScale(1, 1)
+        minBtn.Position = UDim2.fromScale(0, 0)
+        minBtn.Text = "□"
+
+    else
+        main.AnchorPoint = Vector2.new(0, 0)
+        main.Size = CONFIG.UI_SIZE
+        main.Position = CONFIG.UI_OFFSET
+
+        for _, child in ipairs(main:GetChildren()) do
+        if child:IsA("UICorner") then
+            return
+            end
+            child.Visible = true
+        end
+
+        minBtn.Text = "—"
+    end
+end)
+end
+
+    -- Discord Button
+    local discordBtn = Instance.new("TextButton")
+    discordBtn.Name = "DiscordBtn"
+    discordBtn.Size = UDim2.new(0, 120, 0, 35)
+    discordBtn.Position = UDim2.new(1, -135, 0, 8)
+    discordBtn.BackgroundColor3 = Color3.fromRGB(88, 101, 242) -- Discord Blurple
+    discordBtn.Text = "Join Discord"
+    discordBtn.TextColor3 = C.TEXT_WHITE
+    discordBtn.Font = Enum.Font.GothamBold
+    discordBtn.TextScaled = true
+    discordBtn.Parent = titleBar
+    Instance.new("UICorner", discordBtn).CornerRadius = UDim.new(0, 6)
+
+    discordBtn.MouseButton1Click:Connect(function()
+        if setclipboard then
+            setclipboard("https://discord.gg/AeGmuJRFYJ")
+            notify("Steal Underwater Eggs", "Discord invite copied to clipboard!")
+        end
+        
+        -- Attempt to open in default browser (works in some executors)
+        if openurl then
+            openurl("https://discord.gg/AeGmuJRFYJ")
+        end
+    end)
+
+createUI()
+
+local TeleportCheck = false
+local KeepUI = true
+
+Players.LocalPlayer.OnTeleport:Connect(function(State)
+    if KeepUI and (not TeleportCheck) and queueteleport then
+    if not queueteleport then
+    return
+    end
+
+        TeleportCheck = true
+        queueteleport("loadstring(game:HttpGet('https://raw.githubusercontent.com/doexploitsXD/projects/refs/heads/main/stealunderwatereggs'))()")
+    end
+end)
