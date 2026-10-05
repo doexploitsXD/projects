@@ -61,3 +61,5 @@ local Namecall; Namecall = hookmetamethod(game, "__namecall", function(...)
     
     return Namecall(unpack(Arguments))
 end)
+
+print("ac bypass is on")
