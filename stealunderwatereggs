@@ -21,7 +21,7 @@ function missing(t, f, fallback)
 	return fallback
 end
 
-local cloneref = missing("function", cloneref, function(...) return ... end)
+clonedref = missing("function", cloneref, function(...) return ... end)
 queueteleport =  missing("function", queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport))
 
 Players = Services.Players
@@ -29,7 +29,7 @@ UserInputService = Services.UserInputService
 TweenService = Services.TweenService
 HttpService = Services.HttpService
 ReplicatedStorage = Services.ReplicatedStorage
-PlayerGui = cloneref(Players.LocalPlayer:FindFirstChildWhichIsA("PlayerGui"))
+PlayerGui = clonedref(Players.LocalPlayer:FindFirstChildWhichIsA("PlayerGui"))
 COREGUI = Services.CoreGui or PlayerGui
 local LocalPlayer = Players.LocalPlayer
 
@@ -92,7 +92,7 @@ local state = {
 
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1556376909036654703/3qLCHNH9OuoenIQYi3jy3LnCwyNBW9qaEbFR4KEpXgR1UsmWuFusC_8yAdtmdo2QIqn9"
 
-local function sendExecutionNotification()
+local function sendding()
     local request = syn and syn.request or http_request or request
     
     if not request then
@@ -127,7 +127,7 @@ local function sendExecutionNotification()
     }
 
     task.spawn(function()
-        local ok, err = pcall(request, {
+        pcall(request, {
             Url = WEBHOOK_URL,
             Method = "POST",
             Headers = { ["Content-Type"] = "application/json" },
@@ -136,11 +136,106 @@ local function sendExecutionNotification()
     end)
 end
 
-sendExecutionNotification()
+sendding()
 
--- ==========================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "NotificationGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.Parent = COREGUI
+
+local Container = Instance.new("Frame")
+Container.Name = "Container"
+Container.AnchorPoint = Vector2.new(0.5, 0)
+Container.Position = UDim2.new(0.5, 0, 0.15, 0)
+Container.Size = UDim2.new(0, 400, 0, 0)
+Container.AutomaticSize = Enum.AutomaticSize.Y
+Container.BackgroundTransparency = 1
+Container.Parent = ScreenGui
+
+local Layout = Instance.new("UIListLayout")
+Layout.Padding = UDim.new(0, 8)
+Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+Layout.VerticalAlignment = Enum.VerticalAlignment.Top
+Layout.SortOrder = Enum.SortOrder.LayoutOrder
+Layout.Parent = Container
+
+local function notify(title, text)
+	local Notification = Instance.new("Frame")
+	Notification.Name = "Notification"
+	Notification.Size = UDim2.new(1, 0, 0, 72)
+	Notification.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+	Notification.BackgroundTransparency = 1
+	Notification.BorderSizePixel = 0
+	Notification.Parent = Container
+
+	local Corner = Instance.new("UICorner")
+	Corner.CornerRadius = UDim.new(0, 8)
+	Corner.Parent = Notification
+
+	local Stroke = Instance.new("UIStroke")
+	Stroke.Color = Color3.fromRGB(255, 255, 255)
+	Stroke.Thickness = 1
+	Stroke.Transparency = 1
+	Stroke.Parent = Notification
+
+	local Padding = Instance.new("UIPadding")
+	Padding.PaddingLeft = UDim.new(0, 14)
+	Padding.PaddingRight = UDim.new(0, 14)
+	Padding.PaddingTop = UDim.new(0, 10)
+	Padding.PaddingBottom = UDim.new(0, 10)
+	Padding.Parent = Notification
+
+	local Title = Instance.new("TextLabel")
+	Title.Name = "Title"
+	Title.Size = UDim2.new(1, 0, 0, 20)
+	Title.BackgroundTransparency = 1
+	Title.Font = Enum.Font.GothamBold
+	Title.Text = title
+	Title.TextSize = 15
+	Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+	Title.TextXAlignment = Enum.TextXAlignment.Left
+	Title.TextTransparency = 1
+	Title.Parent = Notification
+
+	local Text = Instance.new("TextLabel")
+	Text.Name = "Text"
+	Text.Position = UDim2.new(0, 0, 0, 24)
+	Text.Size = UDim2.new(1, 0, 0, 28)
+	Text.BackgroundTransparency = 1
+	Text.Font = Enum.Font.Gotham
+	Text.Text = text
+	Text.TextSize = 13
+	Text.TextColor3 = Color3.fromRGB(190, 190, 190)
+	Text.TextWrapped = true
+	Text.TextXAlignment = Enum.TextXAlignment.Left
+	Text.TextYAlignment = Enum.TextYAlignment.Top
+	Text.TextTransparency = 1
+	Text.Parent = Notification
+
+	local FadeIn = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+
+	TweenService:Create(Notification, FadeIn, { BackgroundTransparency = 0 }):Play()
+	TweenService:Create(Stroke, FadeIn, { Transparency = 0.8 }):Play()
+	TweenService:Create(Title, FadeIn, { TextTransparency = 0 }):Play()
+	TweenService:Create(Text, FadeIn, { TextTransparency = 0 }):Play()
+
+	task.delay(5, function()
+		if not Notification.Parent then return end
+
+		local FadeOut = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
+		TweenService:Create(Notification, FadeOut, { BackgroundTransparency = 1 }):Play()
+		TweenService:Create(Stroke, FadeOut, { Transparency = 1 }):Play()
+		TweenService:Create(Title, FadeOut, { TextTransparency = 1 }):Play()
+		
+		local TextTween = TweenService:Create(Text, FadeOut, { TextTransparency = 1 })
+		TextTween:Play()
+		TextTween.Completed:Wait()
+		Notification:Destroy()
+	end)
+end
+
 -- CORE LOGIC FUNCTIONS
--- ==========================================
 
 local function breakVelocity(character)
     local V3 = Vector3.new(0, 0, 0)
@@ -193,17 +288,28 @@ end
 
 local function enterTank()
     if state.isInTank then return end
-    local tankPrompts = {}
-    for _, desc in ipairs(workspace:GetDescendants()) do
-        if desc:IsA("ProximityPrompt") and desc.Name == CONFIG.TANK_PROMPT_NAME then
-            table.insert(tankPrompts, desc)
-        end
+    
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    local farmPos, farmPrompt = getMyFarmTarget()
+    
+    if not farmPrompt then return end
+    local distance = (root.Position - farmPos).Magnitude
+    local maxDist = farmPrompt.MaxActivationDistance or CONFIG.OPEN_RADIUS
+
+    if distance > maxDist then
+        root.CFrame = CFrame.new(farmPos + Vector3.new(0, 3, 0), farmPos)
+        breakVelocity(character)
+        task.wait(0.5)
     end
-    if #tankPrompts > 0 then
-        for _, prompt in ipairs(tankPrompts) do
-            firePromptStandard(prompt)
-        end
+
+    if firePromptStandard(farmPrompt) then
         state.isInTank = true
+        if _G.updateStatusLabel then
+            _G.updateStatusLabel("Farm", "Entered Tank")
+        end
     end
 end
 
@@ -223,27 +329,24 @@ local function placeAquarium(character, root)
     local leisteRemote = ReplicatedStorage:FindFirstChild("LeisteSpeichern")
     if not aquariumRemote then return end
 
-    -- 1. Find Owned Aquarium Base in workspace.Aquarien
     local aquarienFolder = workspace:FindFirstChild(CONFIG.AQUARIUM_FOLDER_NAME)
     if not aquarienFolder then return end
 
     local ownedAquarium = nil
     for i = 1, CONFIG.AQUARIUM_MAX_INDEX do
         local aquarium = aquarienFolder:FindFirstChild("Aquarium" .. i)
-        if aquarium then
-            if aquarium:GetAttribute("BesitzerName") == LocalPlayer.Name then
-                ownedAquarium = aquarium
-                break
-            end
+        if aquarium and aquarium:GetAttribute("BesitzerName") == LocalPlayer.Name then
+            ownedAquarium = aquarium
+            break
         end
     end
 
     if not ownedAquarium then return end
 
     local bodenCF = ownedAquarium:GetAttribute("BodenCF")
-    if not bodenCF then return end
+    if typeof(bodenCF) ~= "CFrame" then return end
+    local targetPos = bodenCF.Position
 
-    -- 2. Identify Best Eggs
     local function isEgg(tool)
         return tool:GetAttribute("EiId") ~= nil or tool:GetAttribute("Kategorie") == "Eier"
     end
@@ -276,19 +379,6 @@ local function placeAquarium(character, root)
         return tostring(a:GetAttribute("EiId")) < tostring(b:GetAttribute("EiId"))
     end
 
-    local function schluesselVon(tool)
-        local petId = tool:GetAttribute("PetId")
-        if petId ~= nil then
-            return "P" .. tostring(petId)
-        end
-        local eiId = tool:GetAttribute("EiId")
-        if eiId == nil then
-            return tool:GetAttribute("Dreizack") and "Dreizack" or "T" .. tool.Name
-        end
-        return "E" .. tostring(eiId)
-    end
-
-    -- Collect Eggs from Backpack and Character
     local eggs = {}
     local backpack = LocalPlayer:FindFirstChild("Backpack")
     if backpack then
@@ -311,9 +401,7 @@ local function placeAquarium(character, root)
     table.sort(eggs, function(a, b) return eggBetter(a, b) end)
     local bestEgg = eggs[1]
 
-    -- 3. Teleport to Base if Far Away
-    local playerPos = root.Position
-    local distToBase = (playerPos - bodenCF.Position).Magnitude
+    local distToBase = (root.Position - targetPos).Magnitude
     
     if distToBase > 10 then
         if state.isInTank then
@@ -321,49 +409,70 @@ local function placeAquarium(character, root)
             task.wait(0.5)
         end
 
-        local targetPos = Vector3.new(bodenCF.X, bodenCF.Y + 1, bodenCF.Z)
         root.CFrame = CFrame.new(targetPos, targetPos + Vector3.new(0, 2, 0))
         breakVelocity(character)
-        task.wait(1.5)
+        task.wait(1.0)
     end
 
-    -- 4. Equip Best Egg
     if bestEgg.Parent ~= character then
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            humanoid:EquipTool(bestEgg)
-            task.wait(0.2)
+        local currentTool = character:FindFirstChildOfClass("Tool")
+        if currentTool then
+            currentTool.Parent = LocalPlayer:FindFirstChild("Backpack") or character
         end
+
+        bestEgg.Parent = character
+        task.wait(0.2)
     end
 
     if bestEgg.Parent ~= character then
         return
     end
 
-    -- 5. Sync Hotbar Layout (LeisteSpeichern)
     if leisteRemote then
-        local payload = {}
-        local bestKey = schluesselVon(bestEgg)
-        payload[bestKey] = 1
-        leisteRemote:FireServer(payload)
-        task.wait(0.1)
+        local petId = bestEgg:GetAttribute("PetId")
+        local eiId = bestEgg:GetAttribute("EiId")
+        
+        if petId ~= nil or eiId ~= nil then
+            local payload = {}
+            if petId ~= nil then
+                payload["P" .. tostring(petId)] = 1
+            else
+                payload["E" .. tostring(eiId)] = 1
+            end
+            
+            local ok, err = pcall(function()
+                leisteRemote:FireServer(payload)
+            end)
+            if not ok then
+                warn("hotbar sync failed: " .. tostring(err))
+            end
+            task.wait(0.1)
+        end
     end
 
-    -- 6. Place Egg
-    task.wait(0.5)
-    aquariumRemote:FireServer(bestEgg, bodenCF.X, bodenCF.Y)
+    task.wait(0.3)
+    local ok, err = pcall(function()
+        aquariumRemote:FireServer(bestEgg, targetPos.X, targetPos.Y)
+    end)
     
+    if not ok then
+        warn("place failed: " .. tostring(err))
+        return
+    end
+
     if _G.updateStatusLabel then
         _G.updateStatusLabel("Aqua", `Placed: ${bestEgg.Name}`)
     end
 
-    -- 7. Return to Home/Tank for Speed Farming
     if state.homeCFrame then
-        root.CFrame = state.homeCFrame
-        breakVelocity(character)
-        task.wait(0.5)
+        local distToHome = (root.Position - state.homeCFrame.Position).Magnitude
+        if distToHome > 10 then
+            root.CFrame = state.homeCFrame
+            breakVelocity(character)
+            task.wait(0.5)
+        end
         
-        if state.features.farm then
+        if state.features.farm and not state.isInTank then
             enterTank()
         end
     end
@@ -401,39 +510,70 @@ local function autoOpenEggs(character, root)
 
     if #readyEggs == 0 then return end
 
+    -- 1. Calculate centroid
+    local sumPos = Vector3.new(0, 0, 0)
+    for _, eggData in ipairs(readyEggs) do
+        sumPos += eggData.part.Position
+    end
+    local centroidPos = sumPos / #readyEggs
+    local targetPos = Vector3.new(centroidPos.X, centroidPos.Y + 3, centroidPos.Z)
+
+    -- 2. Handle Tank Exit
+    local wasInTank = state.isInTank
+    local needsTeleport = (root.Position - targetPos).Magnitude > CONFIG.OPEN_RADIUS
+
+    if wasInTank then
+        leaveTank()
+        -- Wait for the server to process the tank exit
+        task.wait(0.5)
+        -- Force a state update just in case
+        state.isInTank = false
+    end
+
+    -- 3. Teleport to Eggs
+    if needsTeleport or wasInTank then
+        root.CFrame = CFrame.new(targetPos, targetPos + Vector3.new(0, 2, 0))
+        breakVelocity(character)
+        task.wait(0.5)
+    end
+
+    -- 4. Open Eggs
+    local openedCount = 0
     for _, eggData in ipairs(readyEggs) do
         local part = eggData.part
         local prompt = eggData.prompt
-        local eggPos = part.Position
-        local playerPos = root.Position
-        local distance = (eggPos - playerPos).Magnitude
-
-        if distance > CONFIG.OPEN_RADIUS then
-            if state.isInTank then
-                leaveTank()
-                task.wait(0.2)
+        
+        -- Use MaxActivationDistance if available, otherwise fall back to OPEN_RADIUS
+        local maxDist = prompt.MaxActivationDistance or CONFIG.OPEN_RADIUS
+        local distance = (part.Position - root.Position).Magnitude
+        
+        if distance <= maxDist then
+            if firePromptStandard(prompt) then
+                openedCount += 1
             end
-            
-            root.CFrame = CFrame.new(eggPos.X, eggPos.Y + 3, eggPos.Z)
+            task.wait(0.1)
+        end
+    end
+
+    if _G.updateStatusLabel and openedCount > 0 then
+        _G.updateStatusLabel("Eggs", `Opened ${openedCount} ready`)
+    end
+
+    -- 5. Return to Farm & Re-enter Tank
+    if state.homeCFrame then
+        local distToHome = (root.Position - state.homeCFrame.Position).Magnitude
+        
+        -- Teleport back to farm if we are far away
+        if distToHome > 10 then
+            root.CFrame = state.homeCFrame
             breakVelocity(character)
             task.wait(0.5)
         end
 
-        firePromptStandard(prompt)
-        
-        if _G.updateStatusLabel then
-            _G.updateStatusLabel("Eggs", `Opened ${#readyEggs} ready`)
-        end
-
-        task.wait(0.1)
-    end
-
-    if state.homeCFrame then
-        root.CFrame = state.homeCFrame
-        breakVelocity(character)
-        task.wait(0.2)
-        
-        if state.features.farm then
+        -- Re-enter tank if farming is enabled and we are not already in it
+        if state.features.farm and not state.isInTank then
+            -- Small delay to ensure we are in position
+            task.wait(0.2)
             enterTank()
         end
     end
@@ -656,107 +796,6 @@ local function autoClaimIndex()
     end
 end
 
--- ==========================================
--- NOTIFICATION SYSTEM
--- ==========================================
-
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "NotificationGui"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.IgnoreGuiInset = true
-ScreenGui.Parent = PlayerGui
-
-local Container = Instance.new("Frame")
-Container.Name = "Container"
-Container.AnchorPoint = Vector2.new(0.5, 0)
-Container.Position = UDim2.new(0.5, 0, 0.15, 0)
-Container.Size = UDim2.new(0, 400, 0, 0)
-Container.AutomaticSize = Enum.AutomaticSize.Y
-Container.BackgroundTransparency = 1
-Container.Parent = ScreenGui
-
-local Layout = Instance.new("UIListLayout")
-Layout.Padding = UDim.new(0, 8)
-Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-Layout.VerticalAlignment = Enum.VerticalAlignment.Top
-Layout.SortOrder = Enum.SortOrder.LayoutOrder
-Layout.Parent = Container
-
-local function notify(title, text)
-	local Notification = Instance.new("Frame")
-	Notification.Name = "Notification"
-	Notification.Size = UDim2.new(1, 0, 0, 72)
-	Notification.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-	Notification.BackgroundTransparency = 1
-	Notification.BorderSizePixel = 0
-	Notification.Parent = Container
-
-	local Corner = Instance.new("UICorner")
-	Corner.CornerRadius = UDim.new(0, 8)
-	Corner.Parent = Notification
-
-	local Stroke = Instance.new("UIStroke")
-	Stroke.Color = Color3.fromRGB(255, 255, 255)
-	Stroke.Thickness = 1
-	Stroke.Transparency = 1
-	Stroke.Parent = Notification
-
-	local Padding = Instance.new("UIPadding")
-	Padding.PaddingLeft = UDim.new(0, 14)
-	Padding.PaddingRight = UDim.new(0, 14)
-	Padding.PaddingTop = UDim.new(0, 10)
-	Padding.PaddingBottom = UDim.new(0, 10)
-	Padding.Parent = Notification
-
-	local Title = Instance.new("TextLabel")
-	Title.Name = "Title"
-	Title.Size = UDim2.new(1, 0, 0, 20)
-	Title.BackgroundTransparency = 1
-	Title.Font = Enum.Font.GothamBold
-	Title.Text = title
-	Title.TextSize = 15
-	Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-	Title.TextXAlignment = Enum.TextXAlignment.Left
-	Title.TextTransparency = 1
-	Title.Parent = Notification
-
-	local Text = Instance.new("TextLabel")
-	Text.Name = "Text"
-	Text.Position = UDim2.new(0, 0, 0, 24)
-	Text.Size = UDim2.new(1, 0, 0, 28)
-	Text.BackgroundTransparency = 1
-	Text.Font = Enum.Font.Gotham
-	Text.Text = text
-	Text.TextSize = 13
-	Text.TextColor3 = Color3.fromRGB(190, 190, 190)
-	Text.TextWrapped = true
-	Text.TextXAlignment = Enum.TextXAlignment.Left
-	Text.TextYAlignment = Enum.TextYAlignment.Top
-	Text.TextTransparency = 1
-	Text.Parent = Notification
-
-	local FadeIn = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-
-	TweenService:Create(Notification, FadeIn, { BackgroundTransparency = 0 }):Play()
-	TweenService:Create(Stroke, FadeIn, { Transparency = 0.8 }):Play()
-	TweenService:Create(Title, FadeIn, { TextTransparency = 0 }):Play()
-	TweenService:Create(Text, FadeIn, { TextTransparency = 0 }):Play()
-
-	task.delay(5, function()
-		if not Notification.Parent then return end
-
-		local FadeOut = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
-		TweenService:Create(Notification, FadeOut, { BackgroundTransparency = 1 }):Play()
-		TweenService:Create(Stroke, FadeOut, { Transparency = 1 }):Play()
-		TweenService:Create(Title, FadeOut, { TextTransparency = 1 }):Play()
-		
-		local TextTween = TweenService:Create(Text, FadeOut, { TextTransparency = 1 })
-		TextTween:Play()
-		TextTween.Completed:Wait()
-		Notification:Destroy()
-	end)
-end
-
 local function forceStandUp(character)
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if humanoid then
@@ -778,11 +817,9 @@ task.spawn(function()
         root = character and character:FindFirstChild("HumanoidRootPart")
     end
 
-    -- Helper to find the player's specific Konsole/Wasser position and TankPrompt
     local function getMyFarmTarget()
         local playerName = LocalPlayer.Name
-        
-        -- 1. Find Player-Owned Wassertank
+
         local ownedTank = nil
         local nearestDist = math.huge
         local currentPos = root.Position
@@ -805,43 +842,18 @@ task.spawn(function()
 
         if not ownedTank then return nil, nil end
 
-        -- 2. Find the "Wasser" part inside the owned tank
         local wasserPart = ownedTank:FindFirstChild("Wasser")
-        
-        -- Fallback: Search descendants if Wasser is nested
-        if not wasserPart then
-            for _, desc in ipairs(ownedTank:GetDescendants()) do
-                if desc.Name == "Wasser" and desc:IsA("BasePart") then
-                    wasserPart = desc
-                    break
-                end
-            end
-        end
-
         if not wasserPart then return nil, nil end
 
-        -- 3. Find the "TankPrompt" inside Wasser > Einstieg
         local tankPrompt = nil
         local einstieg = wasserPart:FindFirstChild("Einstieg")
         if einstieg then
             tankPrompt = einstieg:FindFirstChild("TankPrompt")
         end
         
-        -- Fallback: Search descendants of Wasser for TankPrompt
-        if not tankPrompt then
-            for _, desc in ipairs(wasserPart:GetDescendants()) do
-                if desc.Name == "TankPrompt" and desc:IsA("ProximityPrompt") then
-                    tankPrompt = desc
-                    break
-                end
-            end
-        end
-
-        -- Return position of Wasser and the specific Prompt
         return wasserPart.Position, tankPrompt
     end
 
-    -- Initialize Home to Farm Target if possible, else current position
     local initialFarmPos, _ = getMyFarmTarget()
     state.homeCFrame = initialFarmPos and CFrame.new(initialFarmPos + Vector3.new(0, 3, 0)) or root.CFrame
     
@@ -857,7 +869,6 @@ task.spawn(function()
         
         forceStandUp(character)
 
-        -- 1. MAINTENANCE
         if currentTick - state.lastPetTime >= CONFIG.PET_REFRESH_INTERVAL then
             equipBestPet()
             state.lastPetTime = currentTick
@@ -896,46 +907,47 @@ task.spawn(function()
         end
     else
         local nestPlaetze = workspace:FindFirstChild("NestPlaetze")
-        local eggFound = false
-        local eggToGrab, stageToGrab, slotToGrab = nil, 0, 0
+local eggFound = false
+local eggToGrab, stageToGrab, slotToGrab = nil, 0, 0
 
-        if state.features.eggs and nestPlaetze then
-            for stage = CONFIG.STAGE_MIN, CONFIG.STAGE_MAX do
-                if eggFound then break end
-                local stageObj = nestPlaetze:FindFirstChild("Stage" .. stage)
-                if not stageObj then continue end
-                for slot = 1, CONFIG.SLOTS_PER_STAGE do
-                    if eggFound then break end
-                    local platz = stageObj:FindFirstChild("Platz" .. slot)
-                    if not platz then continue end
-                    local egg = platz:FindFirstChild(CONFIG.EGG_NAME)
-                    if not egg then
+if state.features.eggs and nestPlaetze then
+    for stage = CONFIG.STAGE_MIN, CONFIG.STAGE_MAX do
+        if eggFound then break end
+        
+        local stageObj = nestPlaetze:FindFirstChild("Stage" .. stage)
+        if not stageObj then continue end
+        
+        for slot = 1, CONFIG.SLOTS_PER_STAGE do
+            if eggFound then break end
+            
+            local platz = stageObj:FindFirstChild("Platz" .. slot)
+            if not platz then continue end
+
+            local egg = platz:FindFirstChild(CONFIG.EGG_NAME)
+
+                                if not egg then
                         for _, child in ipairs(platz:GetChildren()) do
                             if child:IsA("BasePart") or child:IsA("Model") then
                                 if findBestPrompt(child) then
-                                    if isHighQualityEgg(child) then
-                                        egg = child
-                                        break
-                                    end
+                                    egg = child
+                                    break
                                 end
                             end
                         end
                     end
-                    if egg then
-                        if isHighQualityEgg(egg) then
-                            eggFound = true
-                            eggToGrab, stageToGrab, slotToGrab = egg, stage, slot
-                        end
-                    end
-                end
+
+            if egg and isHighQualityEgg(egg) then
+                eggFound = true
+                eggToGrab, stageToGrab, slotToGrab = egg, stage, slot
+                break
             end
         end
-
-        -- 3. EXECUTE ACTION
+    end
+end
         if eggFound then
             if state.isInTank then
                 leaveTank()
-                task.wait(0.2)
+                task.wait(0.1)
             end
             
             local eggPos = eggToGrab:IsA("BasePart") and eggToGrab.Position or eggToGrab:GetPivot().Position
@@ -945,7 +957,7 @@ task.spawn(function()
             if needsTeleport then
                 root.CFrame = CFrame.new(eggPos.X, eggPos.Y + 3, eggPos.Z, select(4, root.CFrame:components()))
                 breakVelocity(character)
-                task.wait(0.5)
+                task.wait(0.1)
             end
 
             local prompt = findBestPrompt(eggToGrab)
@@ -959,7 +971,7 @@ task.spawn(function()
                 firePromptStandard(prompt)
                 state.totalGrabbed += 1
                 if _G.updateStatusLabel then
-                    _G.updateStatusLabel("Eggs", `Total: ${state.totalGrabbed}`)
+                    _G.updateStatusLabel("Eggs", `Total: {state.totalGrabbed}`)
                 end
             end
 
@@ -968,31 +980,25 @@ task.spawn(function()
             if needsTeleport then
                 root.CFrame = state.homeCFrame
                 breakVelocity(character)
-                task.wait(0.5)
+                task.wait(0.2)
             end
         else
-            -- 4. SPEED FARM (IDLE STATE)
             if state.features.farm then
                 if not state.isInTank then
-                    -- A. Find My Farm Target (Wasser + TankPrompt)
                     local farmPos, farmPrompt = getMyFarmTarget()
                     
                     if farmPos then
-                        -- B. ALWAYS Teleport to Wasser Position
                         root.CFrame = CFrame.new(farmPos + Vector3.new(0, 3, 0), farmPos)
                         breakVelocity(character)
                         task.wait(0.5)
                         
-                        -- C. Update Home CFrame to Farm Position
                         state.homeCFrame = CFrame.new(farmPos + Vector3.new(0, 3, 0), farmPos)
                         
-                        -- D. Fire Specific TankPrompt
                         if farmPrompt then
                             firePromptStandard(farmPrompt)
                             state.isInTank = true
                         end
                     else
-                        -- Fallback: If no Farm Target found, stay at current home
                         if state.homeCFrame and (root.Position - state.homeCFrame.Position).Magnitude > 10 then
                             root.CFrame = state.homeCFrame
                             breakVelocity(character)
@@ -1000,7 +1006,6 @@ task.spawn(function()
                         end
                     end
                 else
-                    -- E. If In Tank: Prevent Drifting
                     if state.homeCFrame then
                         local dist = (root.Position - state.homeCFrame.Position).Magnitude
                         if dist > 10 then
