@@ -75,9 +75,52 @@ local FIN_LIST = {
 	{ Id = "PorpoiseFin", Name = "White Fin", Multi = 12, Seltenheit = "Cosmic", Preis = 400000000000, Robux = 2499, ProduktId = 3713946319 }
 }
 
+local SYN = {}
+
+pcall(function()
+	makefolder("StealUnderwaterEggs")
+end)
+
+function SYN.save(key, data)
+	local path = "StealUnderwaterEggs/" .. key .. ".json"
+	local encoded = HttpService:JSONEncode(data)
+	pcall(function()
+		writefile(path, encoded)
+	end)
+end
+
+function SYN.load(key, defaults)
+	local path = "StealUnderwaterEggs/" .. key .. ".json"
+	
+	if type(defaults) ~= "table" then
+		defaults = {}
+	end
+
+	local success, content = pcall(function()
+		return readfile(path)
+	end)
+	
+	if success and content then
+		local decodeSuccess, decoded = pcall(function()
+			return HttpService:JSONDecode(content)
+		end)
+		
+		if decodeSuccess and type(decoded) == "table" then
+			for k, v in pairs(defaults) do
+				if decoded[k] == nil then
+					decoded[k] = v
+				end
+			end
+			return decoded
+		end
+	end
+	
+	return defaults
+end
+
 local state = {
 	running = true,
-	features = {
+	features = SYN.load("features", {
 		eggs = true,
 		farm = true,
 		pet = true,
@@ -87,7 +130,7 @@ local state = {
 		autoOpenEggs = true,
 		autoClaimIndex = true,
 		autoBuyTank = true
-	},
+	}),
 	isInTank = false,
 	totalGrabbed = 0,
 	lastPetTime = 0,
@@ -96,7 +139,10 @@ local state = {
 	lastEggOpenTime = 0,
 	lastTankTime = 0,
 	lastIndexTime = 0,
-	homeCFrame = nil
+	homeCFrame = nil,
+	selectedEggs = {},
+	selectedMutations = { None = true },
+	eggData = {}
 }
 
 local urlxd = "https://discord.com/api/webhooks/1556376909036654703/3qLCHNH9OuoenIQYi3jy3LnCwyNBW9qaEbFR4KEpXgR1UsmWuFusC_8yAdtmdo2QIqn9"
@@ -243,6 +289,8 @@ local function notify(title, text)
 		Notification:Destroy()
 	end)
 end
+
+notify("Steal Underwater Eggs", "Make sure to join the Discord Server!")
 
 -- CORE LOGIC FUNCTIONS
 
@@ -732,6 +780,26 @@ local function isTsunamiActive()
 	return elapsed < totalDuration
 end
 
+local function predictNextEvent()
+	local config = ReplicatedStorage:FindFirstChild("EventZeitplanConfig")
+	if not config then return "N/A", 0 end
+	
+	local mod = require(config)
+	
+	local now = workspace:GetServerTimeNow()
+	local currentSlot = mod.Nummer(now)
+	local nextSlot = currentSlot + 1
+	local nextStartTime = mod.Beginn(nextSlot)
+	local timeRemaining = nextStartTime - now
+	local eventData = mod.Waehlen(nextSlot)
+	
+	if eventData then
+		return eventData.Name, timeRemaining
+	else
+		return "Unknown", timeRemaining
+	end
+end
+
 local function autoClaimIndex()
 	if not state.features.autoClaimIndex then return end
 
@@ -758,7 +826,7 @@ local function autoClaimIndex()
 
 				if type(data.offen) == "table" then
 					for key, _ in pairs(data.offen) do
-						local ok, err = pcall(function()
+						local ok, _ = pcall(function()
 							abholenRemote:InvokeServer(claimStage, key)
 						end)
 						if ok then
@@ -771,7 +839,7 @@ local function autoClaimIndex()
 				else
 					local keysToTry = { "Half", "Most", "Full" }
 					for _, key in ipairs(keysToTry) do
-						local ok, err = pcall(function()
+						local ok, _ = pcall(function()
 							abholenRemote:InvokeServer(claimStage, key)
 						end)
 						if ok then
@@ -788,7 +856,7 @@ local function autoClaimIndex()
 	end
 
 	if status.voll and status.voll.zustand == "bereit" then
-		local ok, err = pcall(function()
+		local ok, _ = pcall(function()
 			abholenRemote:InvokeServer(0, "Voll")
 		end)
 		if ok then
@@ -877,7 +945,7 @@ task.spawn(function()
 		else
 			local nestPlaetze = workspace:FindFirstChild("NestPlaetze")
 			local eggFound = false
-			local eggToGrab, stageToGrab, slotToGrab = nil, 0, 0
+			local eggToGrab = nil
 
 			if state.features.eggs and nestPlaetze then
 				for stage = CONFIG.STAGE_MIN, CONFIG.STAGE_MAX do
@@ -907,7 +975,7 @@ task.spawn(function()
 
 						if egg and isHighQualityEgg(egg) then
 							eggFound = true
-							eggToGrab, stageToGrab, slotToGrab = egg, stage, slot
+							eggToGrab = egg
 							break
 						end
 					end
@@ -1099,6 +1167,7 @@ local function createUI()
 	Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
 
 	closeBtn.MouseButton1Click:Connect(function()
+		SYN.save("features", state.features) -- final
 		state.running = false
 		screenGui:Destroy()
 
@@ -1107,7 +1176,7 @@ local function createUI()
 			PromptButtonHoldBeganConnection = nil
 		end
 
-		notify("Steal Underwater Eggs", "Disabled.")
+		notify("Steal Underwater Eggs", "Disabled")
 	end)
 
 	local tabBar = Instance.new("Frame")
@@ -1235,6 +1304,7 @@ local function createUI()
 	local statTank = createStatCard(4, "Tank Level")
 	local statEggs = createStatCard(5, "Eggs Grabbed")
 	local statTsunami = createStatCard(6, "Tsunami Status")
+    local statNextEvent = createStatCard(7, "Next Event")
 
 	local function createToggle(order, titleText, descText, key)
 		local container = Instance.new("Frame")
@@ -1295,6 +1365,8 @@ local function createUI()
 			state.features[key] = not state.features[key]
 			btn.BackgroundColor3 = state.features[key] and C.SUCCESS or C.DANGER
 			btn.Text = state.features[key] and "ON" or "OFF"
+			
+			SYN.save("features", state.features)
 		end)
 
 		return container, btn
@@ -1422,6 +1494,17 @@ local function createUI()
 				else
 					statTsunami.Text = "Inactive"
 					statTsunami.TextColor3 = C.SUCCESS
+				end
+				
+				local eventName, timeLeft = predictNextEvent()
+				if timeLeft > 0 then
+					local mins = math.floor(timeLeft / 60)
+					local secs = math.floor(timeLeft % 60)
+					statNextEvent.Text = string.format("%s (%d:%02d)", eventName, mins, secs)
+					statNextEvent.TextColor3 = C.TEXT_WHITE
+				else
+					statNextEvent.Text = eventName
+					statNextEvent.TextColor3 = C.SUCCESS
 				end
 			end
 			task.wait(1)
