@@ -1,65 +1,125 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local codelist = {
+    [18] = true,
+    [29] = true,
+    [37] = true,
+    [46] = true,
+    [52] = true,
+    [64] = true,
+    [71] = true,
+    [83] = true,
+    [95] = true
+}
+
 local Namecall; Namecall = hookmetamethod(game, "__namecall", function(...)
     if checkcaller() then return Namecall(...) end
     
     local Arguments = {...}
     local Self = Arguments[1]
     local Method = getnamecallmethod()
-    local CallingScript = getcallingscript()
     
-    local isTargetScript = (CallingScript and CallingScript.Name == "94E626E6-9E40-4C35-9B68-252ABC214F7E")
-
     if Method == "FireServer" and Self.Name == "NetSync" then
-        if isTargetScript then
-            local msgType = Arguments[2]
-            local code = Arguments[3]
+        local msgtype = Arguments[2]
+        local code = Arguments[3]
+        local data = Arguments[4]
 
-            if msgType == "m" then
-                local physicsCodes = {
-                    [18] = true,
-                    [37] = true,
-                    [52] = true,
-                    [64] = true,
-                }
-                
-                if physicsCodes[code] then
-                    print("suppressed code: " .. code .. " | Data: " .. tostring(Arguments[4]))
-                    return nil
-                end
-            end
+        if msgtype == "h" or msgtype == "a" or msgtype == "w" then
+            return Namecall(unpack(Arguments))
+        end
 
-            if msgType == "m" then
-                 print("suppressed non-physics code: " .. tostring(code))
-                 return nil
-            end
-        else            
-            local msgType = Arguments[2]
-            if msgType == "h" or msgType == "a" then
-                return Namecall(unpack(Arguments))
-            end
-            if msgType == "m" then
+        if msgtype == "m" then
+            if codelist[code] then
+            print(code)
                 return nil
             end
         end
-    end
 
-    if Method == "Connect" and (Self.Name == "AC_Meldung" or Self.Name == "AC_Warnung") then
-        local callback = Arguments[2]
-
-        local wrappedCallback = function(...)
-            local args = {...}
-            local data = args[1]
-            
-            if type(data) == "table" and data.punkte then
-                data.punkte = 0
-            end
-            
-            return callback(...)
+        if msgtype == "k" or msgtype == "b" then
+            Arguments[3] = {} 
+            return Namecall(unpack(Arguments))
         end
         
-        return Namecall(Self, "Connect", wrappedCallback)
+        if msgtype == "t" then
+            Arguments[3] = { {}, {}, {} }
+            return Namecall(unpack(Arguments))
+        end
+
+        return Namecall(unpack(Arguments))
+    end
+    
+    if Method == "Connect" then
+        if Self.Name == "AC_Warnung" then
+            local callback = Arguments[2]
+            local wrappedCallback = function(...)
+                local ACRemotes = ReplicatedStorage:FindFirstChild("AntiCheatRemotes")
+                if ACRemotes then
+                    for _, child in ipairs(ACRemotes:GetChildren()) do
+                        if child:IsA("Folder") or child:IsA("Model") then
+                            for _, sub in ipairs(child:GetChildren()) do
+                                if sub:IsA("Sound") and sub.IsPlaying then
+                                    sub:Stop()
+                                end
+                            end
+                        end
+                    end
+                end
+                return callback()
+            end
+            return Namecall(Self, "Connect", wrappedCallback)
+        end
+        
+        if Self.Name == "AC_Meldung" then
+            local callback = Arguments[2]
+            local wrappedCallback = function(data)
+                return callback(data)
+            end
+            return Namecall(Self, "Connect", wrappedCallback)
+        end
+    end
+
+    if Method == "InvokeServer" then
+        if Self.Name == "AC_Aktion" then
+            local action = Arguments[2]
+            local payload = Arguments[3]
+            
+            if type(payload) ~= "table" then
+                payload = {}
+            end
+
+            if action == "bannen" or action == "entbannen" or action == "banDauer" then
+                if not payload.userId and not payload.name then
+                    return false, "Missing target identifier"
+                end
+            end
+
+            if action == "schalter" then
+                if type(payload) == "table" and payload.pfad then
+                    if payload.pfad == "AN.Bewegung" then
+                        payload.wert = true
+                    end
+                    if payload.pfad == "CLIENT.WERKZEUG_BAN" then
+                        payload.wert = true
+                    end
+                end
+            end
+
+            if action == "notiz" then
+                if type(payload.text) == "string" then
+                    payload.text = string.sub(payload.text, 1, 500)
+                end
+            end
+
+            Arguments[3] = payload
+            return Namecall(unpack(Arguments))
+        end
+        
+        if Self.Name == "AC_Daten" then
+            return Namecall(unpack(Arguments))
+        end
     end
     
     return Namecall(unpack(Arguments))
 end)
 
-print("ac bypass is on")
+print("coding hub yay")
